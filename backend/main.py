@@ -9,9 +9,12 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="ServeIQ API", version="1.0.0")
 
+from fastapi.middleware.cors import CORSMiddleware
+import re
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://serve-iq-delta.vercel.app"],
+    allow_origin_regex="https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
