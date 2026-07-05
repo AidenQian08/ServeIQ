@@ -13,7 +13,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
     "http://localhost:5173",
-    "https://serve-iq-xxxx.vercel.app",
+    "https://serve-iq-delta.vercel.app",
 ],
     allow_credentials=True,
     allow_methods=["*"],
