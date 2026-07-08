@@ -5,52 +5,116 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
 from auth_utils import get_current_user
+from scoring import TennisEngine, other, game_score_display
+from routers.matches import _enrich as enrich_match
 
 router = APIRouter()
 
 LOCS = ["Wide", "Body", "T"]
+SIDES = ["deuce", "ad"]
 
 
 # ── CRUD ─────────────────────────────────────────────────────────────────────
 
-@router.post("", response_model=schemas.PointOut)
+@router.post("", response_model=schemas.AddPointResponse)
 def add_point(
     body: schemas.PointCreate,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    # verify session belongs to user
-    session = db.query(models.MatchSession).filter(
-        models.MatchSession.id == body.session_id,
-        models.MatchSession.user_id == user.id,
+    match = db.query(models.Match).filter(
+        models.Match.id == body.match_id,
+        models.Match.user_id == user.id,
     ).first()
-    if not session:
-        raise HTTPException(404, "Session not found")
+    if not match:
+        raise HTTPException(404, "Match not found")
+    if match.is_complete:
+        raise HTTPException(400, "Match is already complete")
 
-    pt = models.Point(**body.model_dump())
+    if body.s1_loc not in LOCS:
+        raise HTTPException(400, f"s1_loc must be one of {LOCS}")
+
+    # ── normalize / validate the serve sequence ─────────────────────────────
+    if body.s1_in:
+        s2_loc, s2_in = None, None
+    else:
+        if body.s2_loc is None or body.s2_in is None:
+            raise HTTPException(400, "s2_loc and s2_in are required when the first serve misses")
+        if body.s2_loc not in LOCS:
+            raise HTTPException(400, f"s2_loc must be one of {LOCS}")
+        s2_loc, s2_in = body.s2_loc, body.s2_in
+
+    serve_landed_in = bool(body.s1_in or s2_in)
+
+    if body.outcome not in [e.value for e in models.OutcomeEnum]:
+        raise HTTPException(400, "invalid outcome")
+    if body.winner not in ("player1", "player2"):
+        raise HTTPException(400, "winner must be 'player1' or 'player2'")
+
+    # figure out who's actually serving this point (backend is authoritative)
+    engine = TennisEngine(match)
+    server, _side_preview = engine.next_side_and_server()
+    returner = other(server)
+
+    # ── outcome/winner consistency checks ───────────────────────────────────
+    if not serve_landed_in:
+        if body.outcome != models.OutcomeEnum.double_fault.value:
+            raise HTTPException(400, "Both serves missed — outcome must be 'double_fault'")
+        if body.winner != returner:
+            raise HTTPException(400, "On a double fault, the point winner must be the returner")
+    else:
+        if body.outcome == models.OutcomeEnum.double_fault.value:
+            raise HTTPException(400, "outcome can't be 'double_fault' when a serve landed in")
+        if body.outcome == models.OutcomeEnum.ace.value and body.winner != server:
+            raise HTTPException(400, "An ace must be won by the server")
+
+    # ── apply to the live scoreboard ────────────────────────────────────────
+    snap = engine.apply_point(body.winner)
+
+    pt = models.Point(
+        match_id=match.id,
+        seq=len(match.points) + 1,
+        set_num=snap["set_num"],
+        game_num=snap["game_num"],
+        is_tiebreak=snap["is_tiebreak"],
+        server=snap["server"],
+        side=snap["side"],
+        s1_loc=body.s1_loc,
+        s1_in=body.s1_in,
+        s2_loc=s2_loc,
+        s2_in=s2_in,
+        outcome=body.outcome,
+        winner=body.winner,
+        game_score_display=snap["game_score_display"],
+        set_score_display=snap["set_score_display"],
+        sets_score_display=snap["sets_score_display"],
+        game_point_for=snap["game_point_for"],
+        set_point_for=snap["set_point_for"],
+        match_point_for=snap["match_point_for"],
+        game_won=snap["game_won"],
+        set_won=snap["set_won"],
+        match_won=snap["match_won"],
+    )
     db.add(pt)
+    db.add(match)
     db.commit()
     db.refresh(pt)
-    return pt
+    db.refresh(match)
+
+    return schemas.AddPointResponse(point=pt, match=enrich_match(match))
 
 
-@router.get("/session/{session_id}", response_model=list[schemas.PointOut])
+@router.get("/match/{match_id}", response_model=list[schemas.PointOut])
 def get_points(
-    session_id: str,
+    match_id: str,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    session = db.query(models.MatchSession).filter(
-        models.MatchSession.id == session_id,
-        models.MatchSession.user_id == user.id,
-    ).first()
-    if not session:
-        raise HTTPException(404, "Session not found")
-
+    match = _get_match_or_404(match_id, user.id, db)
     return (
         db.query(models.Point)
-        .filter(models.Point.session_id == session_id)
-        .order_by(models.Point.created_at.desc())
+        .filter(models.Point.match_id == match.id)
+        .order_by(models.Point.seq.asc())
         .all()
     )
 
@@ -61,150 +125,229 @@ def delete_point(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    pt = db.query(models.Point).join(models.MatchSession).filter(
+    pt = db.query(models.Point).join(models.Match).filter(
         models.Point.id == point_id,
-        models.MatchSession.user_id == user.id,
+        models.Match.user_id == user.id,
     ).first()
     if not pt:
         raise HTTPException(404, "Point not found")
+
+    match = pt.match
+    last_seq = db.query(models.Point).filter(models.Point.match_id == match.id).count()
+    if pt.seq != last_seq:
+        raise HTTPException(400, "Only the most recently logged point can be undone")
+
     db.delete(pt)
+    db.flush()
+    _rebuild_match_state(db, match)
     db.commit()
     return {"ok": True}
 
 
+def _rebuild_match_state(db: Session, match: models.Match):
+    """Resets the live scoreboard and replays remaining points in order.
+    Used after undoing the most recent point."""
+    match.p1_sets = 0
+    match.p2_sets = 0
+    match.cur_p1_games = 0
+    match.cur_p2_games = 0
+    match.cur_p1_pts = 0
+    match.cur_p2_pts = 0
+    match.is_tiebreak = False
+    match.server = models.PlayerEnum.player1
+    match.set_sets_history_list([])
+    match.is_complete = False
+    match.winner = None
+
+    remaining = (
+        db.query(models.Point)
+        .filter(models.Point.match_id == match.id)
+        .order_by(models.Point.seq.asc())
+        .all()
+    )
+    engine = TennisEngine(match)
+    for p in remaining:
+        engine.apply_point(p.winner)
+    db.add(match)
+
+
 # ── Stats & AI ───────────────────────────────────────────────────────────────
 
-@router.get("/session/{session_id}/stats", response_model=schemas.SessionStats)
+@router.get("/match/{match_id}/stats", response_model=schemas.MatchStats)
 def get_stats(
-    session_id: str,
+    match_id: str,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    session = db.query(models.MatchSession).filter(
-        models.MatchSession.id == session_id,
-        models.MatchSession.user_id == user.id,
-    ).first()
-    if not session:
-        raise HTTPException(404, "Session not found")
-
+    match = _get_match_or_404(match_id, user.id, db)
     points = (
         db.query(models.Point)
-        .filter(models.Point.session_id == session_id)
-        .order_by(models.Point.created_at.desc())
+        .filter(models.Point.match_id == match.id)
+        .order_by(models.Point.seq.asc())
         .all()
     )
+    return _build_stats(match, points)
 
-    return _build_stats(points)
+
+def _get_match_or_404(match_id: str, user_id: str, db: Session) -> models.Match:
+    match = db.query(models.Match).filter(
+        models.Match.id == match_id,
+        models.Match.user_id == user_id,
+    ).first()
+    if not match:
+        raise HTTPException(404, "Match not found")
+    return match
 
 
-# ── Stats engine ─────────────────────────────────────────────────────────────
+def _build_stats(match: models.Match, points: list) -> schemas.MatchStats:
+    p1_overall = _overall_stats(points, "player1", match.player1_name)
+    p2_overall = _overall_stats(points, "player2", match.player2_name)
+    p1_serve = _serve_stats(points, "player1", match.player1_name)
+    p2_serve = _serve_stats(points, "player2", match.player2_name)
 
-def _build_stats(points: list[models.Point]) -> schemas.SessionStats:
-    total   = len(points)
-    won     = sum(1 for p in points if p.result == "win")
-    f1_att  = sum(1 for p in points)                         # every point has a 1st serve
-    f1_in   = sum(1 for p in points if p.s1_in)
-    s2_att  = sum(1 for p in points if not p.s1_in)
-    s2_in   = sum(1 for p in points if not p.s1_in and p.s2_in)
-    s2_won  = sum(1 for p in points if p.serve_num == 2 and p.result == "win" and not p.is_df)
-    s2_pts  = sum(1 for p in points if p.serve_num == 2)
+    return schemas.MatchStats(
+        total_points=len(points),
+        sets_score_display=f"{match.p1_sets}-{match.p2_sets}",
+        is_complete=match.is_complete,
+        winner=match.winner,
+        p1_overall=p1_overall,
+        p2_overall=p2_overall,
+        p1_serve=p1_serve,
+        p2_serve=p2_serve,
+    )
 
-    deuce_pts = [p for p in points if p.side == "deuce"]
-    ad_pts    = [p for p in points if p.side == "ad"]
 
-    return schemas.SessionStats(
-        total_points=total,
+def _overall_stats(points: list, player: str, name: str) -> schemas.PlayerOverallStats:
+    opp = other(player)
+    played = len(points)
+    won = sum(1 for p in points if p.winner == player)
+    winners = sum(1 for p in points if p.outcome == "winner" and p.winner == player)
+    unforced = sum(1 for p in points if p.outcome == "unforced_error" and p.winner == opp)
+    forced = sum(1 for p in points if p.outcome == "forced_error" and p.winner == opp)
+    aces = sum(1 for p in points if p.outcome == "ace" and p.server == player)
+    dfs = sum(1 for p in points if p.outcome == "double_fault" and p.server == player)
+
+    return schemas.PlayerOverallStats(
+        player=player,
+        name=name,
+        points_played=played,
         points_won=won,
-        win_pct=_pct(won, total),
-        first_in_pct=_pct(f1_in, f1_att),
-        second_in_pct=_pct(s2_in, s2_att),
-        second_serve_win_pct=_pct(s2_won, s2_pts),
-        deuce=_side_stats(deuce_pts),
-        ad=_side_stats(ad_pts),
+        win_pct=_pct(won, played),
+        winners=winners,
+        unforced_errors=unforced,
+        forced_errors=forced,
+        aces=aces,
+        double_faults=dfs,
     )
 
 
-def _side_stats(points: list[models.Point]) -> schemas.SideStats:
-    first  = _loc_stats(points, serve_num=1)
-    second = _loc_stats(points, serve_num=2)
-    streak = _streak(points)
-    rec, conf = _recommend(first, streak)
-    return schemas.SideStats(
-        first_serve=first,
-        second_serve=second,
-        streak=streak,
-        recommendation=rec,
-        confidence=conf,
+def _serve_stats(points: list, player: str, name: str) -> schemas.PlayerServeStats:
+    served = [p for p in points if p.server == player]
+    first_in = sum(1 for p in served if p.s1_in)
+    second_att = sum(1 for p in served if not p.s1_in)
+    second_in = sum(1 for p in served if not p.s1_in and p.s2_in)
+    aces = sum(1 for p in served if p.outcome == "ace")
+    dfs = sum(1 for p in served if p.outcome == "double_fault")
+
+    deuce_pts = [p for p in served if p.side == "deuce"]
+    ad_pts = [p for p in served if p.side == "ad"]
+
+    return schemas.PlayerServeStats(
+        player=player,
+        name=name,
+        first_serve_pts=len(served),
+        first_in_pct=_pct(first_in, len(served)),
+        second_in_pct=_pct(second_in, second_att),
+        aces=aces,
+        double_faults=dfs,
+        deuce=_side_stats(deuce_pts, player),
+        ad=_side_stats(ad_pts, player),
     )
 
 
-def _loc_stats(points: list[models.Point], serve_num: int) -> list[schemas.LocStat]:
-    """Aggregate raw counts per location then run Thompson Sampling."""
-    raw: dict[str, dict] = {
-        l: {"in_att": 0, "in_made": 0, "win_att": 0, "wins": 0} for l in LOCS
-    }
-
-    if serve_num == 1:
-        for p in points:
-            loc = p.s1_loc
-            raw[loc]["in_att"]  += 1
-            if p.s1_in:
-                raw[loc]["in_made"] += 1
-                raw[loc]["win_att"] += 1
-                if p.result == "win" and p.serve_num == 1:
-                    raw[loc]["wins"] += 1
-    else:
-        for p in points:
-            if not p.s1_in and p.s2_loc:
-                loc = p.s2_loc
-                raw[loc]["in_att"] += 1
-                if p.s2_in:
-                    raw[loc]["in_made"] += 1
-                    raw[loc]["win_att"] += 1
-                    if p.result == "win":
-                        raw[loc]["wins"] += 1
-
-    # Thompson probabilities
+def _side_stats(points: list, player: str) -> schemas.SideStats:
+    raw = _loc_raw(points, player)
     ai_probs = _thompson(raw)
 
-    stats = []
+    locs = []
     for loc in LOCS:
         r = raw[loc]
-        win_pct = _pct(r["wins"], r["win_att"])
-        in_pct  = _pct(r["in_made"], r["in_att"])
-        eff     = (win_pct / 100 * in_pct / 100 * 100) if (win_pct and in_pct) else None
-        stats.append(schemas.LocStat(
+        first_in_pct = _pct(r["first_in_made"], r["first_in_att"])
+        first_win_pct = _pct(r["first_wins"], r["first_win_att"])
+        second_win_pct = _pct(r["second_wins"], r["second_win_att"])
+
+        p_in = (r["first_in_att"] and r["first_in_made"] / r["first_in_att"]) or 0.0
+        p_win_in = (r["first_win_att"] and r["first_wins"] / r["first_win_att"]) or 0.0
+        p_win_miss = (r["second_win_att"] and r["second_wins"] / r["second_win_att"]) or 0.0
+        ev = p_in * p_win_in + (1 - p_in) * p_win_miss if r["first_in_att"] else None
+
+        locs.append(schemas.LocStat(
             loc=loc,
-            in_att=r["in_att"],
-            in_made=r["in_made"],
-            in_pct=in_pct,
-            win_att=r["win_att"],
-            wins=r["wins"],
-            win_pct=win_pct,
-            eff_pct=round(eff, 1) if eff else None,
+            first_in_att=r["first_in_att"],
+            first_in_made=r["first_in_made"],
+            first_in_pct=first_in_pct,
+            first_win_att=r["first_win_att"],
+            first_wins=r["first_wins"],
+            first_win_pct=first_win_pct,
+            second_win_att=r["second_win_att"],
+            second_wins=r["second_wins"],
+            second_win_pct=second_win_pct,
+            ev_pct=round(ev * 100, 1) if ev is not None else None,
             ai_prob=round(ai_probs[loc], 3),
         ))
-    return stats
+
+    streak = _streak(points)
+    rec, conf = _recommend(locs, streak)
+    return schemas.SideStats(locations=locs, streak=streak, recommendation=rec, confidence=conf)
 
 
-def _thompson(raw: dict, n_samples: int = 3000) -> dict[str, float]:
+def _loc_raw(points: list, player: str) -> dict:
+    """Raw counts per serve location, from `player`'s point of view as server.
+
+    first_in_att / first_in_made : how often the 1st serve aimed at `loc` landed in
+    first_win_att / first_wins   : of those that landed in, how many points were won
+    second_win_att / second_wins : of the 1st serves aimed at `loc` that MISSED,
+                                    how many of those points were ultimately won
+                                    (win rate on the fallback to the 2nd serve)
+    """
+    raw = {l: {"first_in_att": 0, "first_in_made": 0, "first_win_att": 0, "first_wins": 0,
+               "second_win_att": 0, "second_wins": 0} for l in LOCS}
+    for p in points:
+        loc = p.s1_loc
+        raw[loc]["first_in_att"] += 1
+        if p.s1_in:
+            raw[loc]["first_in_made"] += 1
+            raw[loc]["first_win_att"] += 1
+            if p.winner == player:
+                raw[loc]["first_wins"] += 1
+        else:
+            raw[loc]["second_win_att"] += 1
+            if p.winner == player:
+                raw[loc]["second_wins"] += 1
+    return raw
+
+
+def _thompson(raw: dict, n_samples: int = 3000) -> dict:
+    """Thompson-sample the blended EV = P(in)*P(win|in) + P(out)*P(win|out→2nd)
+    for each location, and return each location's probability of being best."""
     counts = {l: 0 for l in LOCS}
     for _ in range(n_samples):
         best, bv = None, -1.0
         for loc in LOCS:
-            r  = raw[loc]
-            wr = _beta_sample(r["wins"] + 1, (r["win_att"] - r["wins"]) + 1)
-            ir = _beta_sample(r["in_made"] + 1, (r["in_att"] - r["in_made"]) + 1)
-            ev = wr * ir
+            r = raw[loc]
+            p_in = _beta_sample(r["first_in_made"] + 1, (r["first_in_att"] - r["first_in_made"]) + 1)
+            p_win_in = _beta_sample(r["first_wins"] + 1, (r["first_win_att"] - r["first_wins"]) + 1)
+            p_win_miss = _beta_sample(r["second_wins"] + 1, (r["second_win_att"] - r["second_wins"]) + 1)
+            ev = p_in * p_win_in + (1 - p_in) * p_win_miss
             if ev > bv:
                 bv, best = ev, loc
         counts[best] += 1
     return {l: counts[l] / n_samples for l in LOCS}
 
 
-def _streak(points: list[models.Point]) -> dict:
-    """Recent 1st-serve streak for this side and compute penalty."""
-    locs = [p.s1_loc for p in points]
+def _streak(points: list) -> dict:
+    """Most recent consecutive 1st-serve-location streak (for this player/side)."""
+    locs = [p.s1_loc for p in reversed(points)]   # most recent first
     if not locs:
         return {"loc": None, "count": 0, "penalty": 0.0}
     top, n = locs[0], 0
@@ -217,14 +360,12 @@ def _streak(points: list[models.Point]) -> dict:
     return {"loc": top, "count": n, "penalty": round(pen, 3)}
 
 
-def _recommend(loc_stats: list[schemas.LocStat], streak: dict) -> tuple[str, str]:
-    """Pick best loc after applying streak penalty to Thompson probs."""
-    total = sum(ls.in_att for ls in loc_stats)
+def _recommend(loc_stats: list, streak: dict) -> tuple:
+    total = sum(ls.first_in_att for ls in loc_stats)
     if total < 3:
         return "—", "Learning"
 
-    # Re-weight probs by streak penalty
-    adj: dict[str, float] = {}
+    adj = {}
     for ls in loc_stats:
         p = ls.ai_prob
         if ls.loc == streak.get("loc") and streak.get("penalty", 0) > 0:
@@ -232,19 +373,24 @@ def _recommend(loc_stats: list[schemas.LocStat], streak: dict) -> tuple[str, str
         adj[ls.loc] = p
 
     best = max(adj, key=adj.get)
-    prob = adj[best] / sum(adj.values()) if sum(adj.values()) > 0 else 0
+    total_adj = sum(adj.values())
+    prob = adj[best] / total_adj if total_adj > 0 else 0
 
-    if total < 5:   conf = "Learning"
-    elif prob >= 0.6: conf = "High"
-    elif prob >= 0.38: conf = "Medium"
-    else:             conf = "Low"
+    if total < 5:
+        conf = "Learning"
+    elif prob >= 0.6:
+        conf = "High"
+    elif prob >= 0.38:
+        conf = "Medium"
+    else:
+        conf = "Low"
 
     return best, conf
 
 
 # ── maths helpers ────────────────────────────────────────────────────────────
 
-def _pct(num: int, den: int) -> float | None:
+def _pct(num: int, den: int):
     return round(100 * num / den, 1) if den else None
 
 
