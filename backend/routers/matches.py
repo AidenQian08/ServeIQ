@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
 from auth_utils import get_current_user
-from scoring import game_score_display
+from scoring import game_score_display, current_side
 
 router = APIRouter()
 
@@ -93,8 +93,13 @@ def _enrich(m: models.Match) -> schemas.MatchOut:
         is_active=m.is_active,
         p1_sets=m.p1_sets,
         p2_sets=m.p2_sets,
+        cur_p1_games=m.cur_p1_games,
+        cur_p2_games=m.cur_p2_games,
+        cur_p1_pts=m.cur_p1_pts,
+        cur_p2_pts=m.cur_p2_pts,
         sets_history=m.sets_history_list(),
         server=m.server,
+        next_side=current_side(m.cur_p1_pts, m.cur_p2_pts),
         is_tiebreak=m.is_tiebreak,
         game_score_display=game_score_display(m.cur_p1_pts, m.cur_p2_pts, m.is_tiebreak),
         set_score_display=f"{m.cur_p1_games}-{m.cur_p2_games}",

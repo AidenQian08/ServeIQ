@@ -55,9 +55,14 @@ class MatchOut(BaseModel):
 
     p1_sets: int
     p2_sets: int
+    cur_p1_games: int
+    cur_p2_games: int
+    cur_p1_pts: int
+    cur_p2_pts: int
     sets_history: list[dict]
 
     server: str
+    next_side: str
     is_tiebreak: bool
     game_score_display: str
     set_score_display: str
