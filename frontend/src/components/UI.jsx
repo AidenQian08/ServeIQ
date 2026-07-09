@@ -12,16 +12,18 @@ export function Logo({ size = 'md' }) {
 }
 
 /* ── Card ── */
-export function Card({ children, style, accent }) {
+export function Card({ children, style, accent, ...rest }) {
   return (
-    <div style={{
-      background: 'var(--card)',
-      border: `1px solid ${accent ? 'rgba(0,230,118,0.25)' : 'var(--border)'}`,
-      borderRadius: 14,
-      position: 'relative',
-      overflow: 'hidden',
-      ...style,
-    }}>
+    <div
+      {...rest}
+      style={{
+        background: 'var(--card)',
+        border: `1px solid ${accent ? 'rgba(0,230,118,0.25)' : 'var(--border)'}`,
+        borderRadius: 14,
+        position: 'relative',
+        overflow: 'hidden',
+        ...style,
+      }}>
       {accent && (
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0, height: 2,
@@ -117,6 +119,19 @@ export function ToggleGroup({ options, value, onChange }) {
           {opt.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+/* ── Tag ── */
+export function Tag({ children, color = 'var(--muted)', bg = 'var(--surface)' }) {
+  return (
+    <div style={{
+      background: bg, border: '1px solid var(--border)',
+      borderRadius: 6, padding: '3px 8px', fontSize: 11, color, fontWeight: 600,
+      display: 'inline-block',
+    }}>
+      {children}
     </div>
   )
 }

@@ -32,83 +32,160 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
-# ── Sessions ──────────────────────────────────────────────────────────────────
-class SessionCreate(BaseModel):
+# ── Matches ───────────────────────────────────────────────────────────────────
+class MatchCreate(BaseModel):
     label: str
-    opponent: Optional[str] = None
     surface: Optional[str] = None
+    player1_name: str = "Me"
+    player2_name: str = "Opponent"
+    format: str = "bo3"                  # "bo3" | "bo5"
+    final_set_tiebreak: bool = True
 
 
-class SessionOut(BaseModel):
+class MatchOut(BaseModel):
     id: str
     label: str
-    opponent: Optional[str]
     surface: Optional[str]
+    player1_name: str
+    player2_name: str
+    format: str
+    final_set_tiebreak: bool
     created_at: datetime
     is_active: bool
-    point_count: int = 0
 
-    class Config:
-        from_attributes = True
+    p1_sets: int
+    p2_sets: int
+    cur_p1_games: int
+    cur_p2_games: int
+    cur_p1_pts: int
+    cur_p2_pts: int
+    sets_history: list[dict]
+
+    server: str
+    next_side: str
+    is_tiebreak: bool
+    game_score_display: str
+    set_score_display: str
+    sets_score_display: str
+
+    is_complete: bool
+    winner: Optional[str]
+
+    point_count: int = 0
 
 
 # ── Points ────────────────────────────────────────────────────────────────────
 class PointCreate(BaseModel):
-    session_id: str
-    side: str           # "deuce" | "ad"
-    s1_loc: str         # "Wide" | "Body" | "T"
+    match_id: str
+    s1_loc: str                          # "Wide" | "Body" | "T"
     s1_in: bool
     s2_loc: Optional[str] = None
     s2_in: Optional[bool] = None
-    result: str         # "win" | "loss"
-    serve_num: int      # 1 | 2
-    is_df: bool = False
+    outcome: str                         # ace | winner | unforced_error | forced_error | double_fault
+    winner: str                          # "player1" | "player2" — who won the point
 
 
 class PointOut(BaseModel):
     id: str
-    session_id: str
+    match_id: str
+    seq: int
     created_at: datetime
+
+    set_num: int
+    game_num: int
+    is_tiebreak: bool
+
+    server: str
     side: str
+
     s1_loc: str
     s1_in: bool
     s2_loc: Optional[str]
     s2_in: Optional[bool]
-    result: str
-    serve_num: int
-    is_df: bool
+
+    outcome: str
+    winner: str
+
+    game_score_display: str
+    set_score_display: str
+    sets_score_display: str
+
+    game_point_for: Optional[str]
+    set_point_for: Optional[str]
+    match_point_for: Optional[str]
+
+    game_won: bool
+    set_won: bool
+    match_won: bool
 
     class Config:
         from_attributes = True
 
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+class AddPointResponse(BaseModel):
+    point: PointOut
+    match: MatchOut
+
+
+# ── Stats & AI ──────────────────────────────────────────────────────────────
 class LocStat(BaseModel):
     loc: str
-    in_att: int
-    in_made: int
-    in_pct: Optional[float]
-    win_att: int
-    wins: int
-    win_pct: Optional[float]
-    eff_pct: Optional[float]      # win% × in%
-    ai_prob: float                # Thompson probability of being best
+    first_in_att: int
+    first_in_made: int
+    first_in_pct: Optional[float]
+
+    first_win_att: int          # points where the 1st serve landed in at this loc
+    first_wins: int
+    first_win_pct: Optional[float]
+
+    second_win_att: int         # points where the 1st serve at this loc missed
+    second_wins: int
+    second_win_pct: Optional[float]
+
+    ev_pct: Optional[float]     # blended expected point-win % from aiming here
+    ai_prob: float              # Thompson-sampled probability this is the best location
 
 
 class SideStats(BaseModel):
-    first_serve: list[LocStat]
-    second_serve: list[LocStat]
-    streak: dict                  # { loc, count, penalty }
-    recommendation: str           # best loc
-    confidence: str               # High / Medium / Low / Learning
+    locations: list[LocStat]
+    streak: dict                # { loc, count, penalty }
+    recommendation: str
+    confidence: str
 
 
-class SessionStats(BaseModel):
-    total_points: int
-    points_won: int
-    win_pct: Optional[float]
+class PlayerServeStats(BaseModel):
+    player: str
+    name: str
+    first_serve_pts: int
     first_in_pct: Optional[float]
     second_in_pct: Optional[float]
-    second_serve_win_pct: Optional[float]
+    aces: int
+    double_faults: int
     deuce: SideStats
     ad: SideStats
+
+
+class PlayerOverallStats(BaseModel):
+    player: str
+    name: str
+    points_played: int
+    points_won: int
+    win_pct: Optional[float]
+    winners: int
+    unforced_errors: int
+    forced_errors: int
+    aces: int
+    double_faults: int
+
+
+class MatchStats(BaseModel):
+    total_points: int
+    sets_score_display: str
+    is_complete: bool
+    winner: Optional[str]
+
+    p1_overall: PlayerOverallStats
+    p2_overall: PlayerOverallStats
+
+    p1_serve: PlayerServeStats
+    p2_serve: PlayerServeStats

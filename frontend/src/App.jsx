@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DashboardPage from './pages/DashboardPage'
-import SessionPage from './pages/SessionPage'
+import MatchPage from './pages/MatchPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -37,7 +37,7 @@ export default function App() {
         <Route path="/login"    element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/"         element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
-        <Route path="/session/:id" element={<PrivateRoute><SessionPage /></PrivateRoute>} />
+        <Route path="/match/:id" element={<PrivateRoute><MatchPage /></PrivateRoute>} />
         <Route path="*"         element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>
