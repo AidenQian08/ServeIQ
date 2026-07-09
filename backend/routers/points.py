@@ -332,7 +332,8 @@ def _thompson(raw: dict, n_samples: int = 3000) -> dict:
     for each location, and return each location's probability of being best."""
     counts = {l: 0 for l in LOCS}
     for _ in range(n_samples):
-        best, bv = None, -1.0
+        best = LOCS[0]
+        bv = float("-inf")
         for loc in LOCS:
             r = raw[loc]
             p_in = _beta_sample(r["first_in_made"] + 1, (r["first_in_att"] - r["first_in_made"]) + 1)
@@ -395,7 +396,7 @@ def _pct(num: int, den: int):
 
 
 def _beta_sample(a: float, b: float) -> float:
-    return _gamma(a) / (_gamma(a) + _gamma(b))
+    return random.betavariate(a, b)
 
 
 def _gamma(shape: float) -> float:
