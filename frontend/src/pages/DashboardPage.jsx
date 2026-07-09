@@ -93,17 +93,7 @@ export default function DashboardPage() {
           ) : matches.length === 0 ? (
             <Empty icon="🎾" title="No matches yet" sub="Start a new match to begin tracking points" />
           ) : (
-            matches.map(m => (
-              <MatchCard 
-                key={m.id}
-                match={m}
-                onOpen={() => {
-                  console.log("Opening match", m.id)
-                  navigate(`/match/${m.id}`)
-                }}
-                onDelete={deleteMatch} 
-              />
-            ))
+            matches.map(m => <MatchCard key={m.id} match={m} onOpen={() => navigate(`/match/${m.id}`)} onDelete={deleteMatch} />)
           )}
         </div>
 
@@ -129,57 +119,48 @@ function MatchCard({ match, onOpen, onDelete }) {
   const p1Won = match.winner === 'player1'
   const p2Won = match.winner === 'player2'
 
-  const handleCardClick = (e) => {
-    // If they clicked the '✕' delete button, do absolutely nothing here
-    if (e.target.tagName.toLowerCase() === 'button') return;
-    onOpen();
-  }
-
   return (
-    <div onClick={handleCardClick} style={{ width: '100%' }}>
-      <Card style={{ padding: '14px 16px', cursor: 'pointer', position: 'relative' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{match.label}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{date}</div>
-          </div>
-          <button
-            onClick={(e) => onDelete(match.id, e)}
-            style={{
-              background: 'none', border: 'none', color: 'var(--muted)',
-              fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1,
-              position: 'relative', zIndex: 2
-            }}
-          >✕</button>
+    <Card style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={onOpen}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{match.label}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{date}</div>
         </div>
+        <button
+          onClick={(e) => onDelete(match.id, e)}
+          style={{
+            background: 'none', border: 'none', color: 'var(--muted)',
+            fontSize: 16, cursor: 'pointer', padding: '0 4px', lineHeight: 1,
+          }}
+        >✕</button>
+      </div>
 
-        {/* Players + score */}
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 10, padding: '8px 12px', marginBottom: 10,
-        }}>
-          <div style={{ fontSize: 13, fontWeight: p1Won ? 700 : 500, color: p1Won ? 'var(--green)' : 'var(--text)' }}>
-            {match.player1_name}{p1Won && ' 🏆'}
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
-            {match.sets_score_display}
-          </div>
-          <div style={{ fontSize: 13, fontWeight: p2Won ? 700 : 500, color: p2Won ? 'var(--green)' : 'var(--text)' }}>
-            {match.player2_name}{p2Won && ' 🏆'}
-          </div>
+      {/* Players + score */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 10, padding: '8px 12px', marginBottom: 10,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: p1Won ? 700 : 500, color: p1Won ? 'var(--green)' : 'var(--text)' }}>
+          {match.player1_name}{p1Won && ' 🏆'}
         </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
+          {match.sets_score_display}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: p2Won ? 700 : 500, color: p2Won ? 'var(--green)' : 'var(--text)' }}>
+          {match.player2_name}{p2Won && ' 🏆'}
+        </div>
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Tag color={match.is_complete ? 'var(--muted)' : 'var(--green)'} bg={match.is_complete ? 'var(--surface)' : 'rgba(0,230,118,0.1)'}>
-            {match.is_complete ? 'Complete' : 'In Progress'}
-          </Tag>
-          <Tag>{match.format === 'bo5' ? 'Best of 5' : 'Best of 3'}</Tag>
-          {match.surface && <Tag>{match.surface}</Tag>}
-          <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--green)' }}>Open →</div>
-        </div>
-      </Card>
-    </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <Tag color={match.is_complete ? 'var(--muted)' : 'var(--green)'} bg={match.is_complete ? 'var(--surface)' : 'rgba(0,230,118,0.1)'}>
+          {match.is_complete ? 'Complete' : 'In Progress'}
+        </Tag>
+        <Tag>{match.format === 'bo5' ? 'Best of 5' : 'Best of 3'}</Tag>
+        {match.surface && <Tag>{match.surface}</Tag>}
+        <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--green)' }}>Open →</div>
+      </div>
+    </Card>
   )
 }
 

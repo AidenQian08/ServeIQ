@@ -29,6 +29,7 @@ export default function MatchPage() {
   const [stats, setStats]   = useState(null)
   const [points, setPoints] = useState([])
   const [loadingInit, setLoadingInit] = useState(true)
+  const [loadError, setLoadError]     = useState(null)
   const [savingPt, setSavingPt]       = useState(false)
 
   // current point being built
@@ -51,7 +52,11 @@ export default function MatchPage() {
       setMatch(mRes.data)
       setPoints(pRes.data)
       setStats(stRes.data)
-    } catch {
+    } catch (e) {
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail
+      console.error('Failed to load match:', status, detail, e)
+      setLoadError(detail || `${status ? `HTTP ${status}` : e.message} — check the console/network tab for details`)
       showToast('Failed to load match')
     } finally {
       setLoadingInit(false)
@@ -166,9 +171,20 @@ export default function MatchPage() {
     }
   }
 
-  if (loadingInit || !match) return (
+  if (loadingInit) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)' }}>
       <Spinner size={32} />
+    </div>
+  )
+
+  if (loadError || !match) return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: 30, gap: 14, textAlign: 'center' }}>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--red)' }}>Couldn't load this match</div>
+      <div style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 320 }}>{loadError || 'Unknown error — check the browser console for details.'}</div>
+      <button onClick={() => navigate('/')} style={{
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
+        padding: '10px 18px', color: 'var(--text)', fontSize: 13, cursor: 'pointer', marginTop: 8,
+      }}>← Back to Matches</button>
     </div>
   )
 
