@@ -121,6 +121,19 @@ export function ToggleGroup({ options, value, onChange }) {
   )
 }
 
+/* ── Tag ── */
+export function Tag({ children, color = 'var(--muted)', bg = 'var(--surface)' }) {
+  return (
+    <div style={{
+      background: bg, border: '1px solid var(--border)',
+      borderRadius: 6, padding: '3px 8px', fontSize: 11, color, fontWeight: 600,
+      display: 'inline-block',
+    }}>
+      {children}
+    </div>
+  )
+}
+
 /* ── Stat box ── */
 export function StatBox({ label, value, highlight }) {
   return (
