@@ -130,7 +130,7 @@ function MatchCard({ match, onOpen, onDelete }) {
   const p2Won = match.winner === 'player2'
 
   return (
-    <Card style={{ padding: '14px 16px', cursor: 'pointer' }} onClick={onOpen}>
+    <Card style={{ padding: '14px 16px', cursor: 'pointer', position: 'relative', zIndex: 5 }} onClick={onOpen}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
         <div>
           <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 2 }}>{match.label}</div>
