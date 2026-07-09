@@ -93,7 +93,17 @@ export default function DashboardPage() {
           ) : matches.length === 0 ? (
             <Empty icon="🎾" title="No matches yet" sub="Start a new match to begin tracking points" />
           ) : (
-            matches.map(m => <MatchCard key={m.id} match={m} onOpen={() => navigate(`/match/${m.id}`)} onDelete={deleteMatch} />)
+            matches.map(m => (
+              <MatchCard 
+                key={m.id}
+                match={m}
+                onOpen={() => {
+                  console.log("Opening match", m.id)
+                  navigate(`/match/${m.id}`)
+                }}
+                onDelete={deleteMatch} 
+              />
+            ))
           )}
         </div>
 
