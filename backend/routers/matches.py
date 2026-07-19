@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
 from auth_utils import get_current_user
-from scoring import game_score_display, current_side
+from scoring import game_score_display, TennisEngine
 
 router = APIRouter()
 
@@ -81,6 +81,7 @@ def _get_or_404(match_id: str, user_id: str, db: Session) -> models.Match:
 
 
 def _enrich(m: models.Match) -> schemas.MatchOut:
+    live_server, live_side = TennisEngine(m).next_side_and_server()
     return schemas.MatchOut(
         id=m.id,
         label=m.label,
@@ -98,8 +99,8 @@ def _enrich(m: models.Match) -> schemas.MatchOut:
         cur_p1_pts=m.cur_p1_pts,
         cur_p2_pts=m.cur_p2_pts,
         sets_history=m.sets_history_list(),
-        server=m.server,
-        next_side=current_side(m.cur_p1_pts, m.cur_p2_pts),
+        server=live_server,
+        next_side=live_side,
         is_tiebreak=m.is_tiebreak,
         game_score_display=game_score_display(m.cur_p1_pts, m.cur_p2_pts, m.is_tiebreak),
         set_score_display=f"{m.cur_p1_games}-{m.cur_p2_games}",
