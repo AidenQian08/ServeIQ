@@ -1,28 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
 import models, schemas
 from auth_utils import hash_password, verify_password, create_token, get_current_user
-from rate_limit import check_rate_limit, record_attempt, record_failure, record_success, check_ip_flood
+from rate_limit import rate_limit
 
 router = APIRouter()
 
 MIN_PASSWORD_LENGTH = 8
 
 
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
-@router.post("/register", response_model=schemas.TokenResponse)
-def register(body: schemas.UserRegister, request: Request, db: Session = Depends(get_db)):
-    # Registration doesn't have a "wrong password" concept to brute-force,
-    # so it only gets the generic per-IP flood guard (blocks mass account
-    # creation / email-enumeration spam), not the per-account lockout.
-    check_ip_flood(_client_ip(request))
-    record_attempt(_client_ip(request))
-
+@router.post(
+    "/register",
+    response_model=schemas.TokenResponse,
+    dependencies=[Depends(rate_limit(max_attempts=5, window_seconds=60))],
+)
+def register(body: schemas.UserRegister, db: Session = Depends(get_db)):
     if len(body.password) < MIN_PASSWORD_LENGTH:
         raise HTTPException(
             status_code=400,
@@ -48,21 +42,16 @@ def register(body: schemas.UserRegister, request: Request, db: Session = Depends
     )
 
 
-@router.post("/login", response_model=schemas.TokenResponse)
-def login(body: schemas.UserLogin, request: Request, db: Session = Depends(get_db)):
-    client_ip = _client_ip(request)
-
-    # Checked BEFORE the password is verified — an active account lockout
-    # or IP flood block can't be bypassed by a correct password.
-    check_rate_limit(client_ip, body.email)
-    record_attempt(client_ip)
-
+@router.post(
+    "/login",
+    response_model=schemas.TokenResponse,
+    dependencies=[Depends(rate_limit(max_attempts=5, window_seconds=60))],
+)
+def login(body: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == body.email).first()
     if not user or not verify_password(body.password, user.hashed_pw):
-        record_failure(body.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    record_success(body.email)
     return schemas.TokenResponse(
         access_token=create_token(user.id),
         user_id=user.id,
