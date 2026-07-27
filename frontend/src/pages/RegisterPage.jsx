@@ -19,7 +19,14 @@ export default function RegisterPage() {
     try {
       await register(email, name, password)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed')
+      const detail = err.response?.data?.detail
+      if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg || String(d)).join(', ') || 'Registration failed')
+      } else if (typeof detail === 'string') {
+        setError(detail)
+      } else {
+        setError('Registration failed')
+      }
     } finally {
       setLoading(false)
     }

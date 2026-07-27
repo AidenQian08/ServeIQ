@@ -91,7 +91,11 @@ export function Input({ label, type = 'text', value, onChange, placeholder, erro
         onFocus={e => e.target.style.borderColor = 'var(--green)'}
         onBlur={e => e.target.style.borderColor = error ? 'var(--red)' : 'var(--border)'}
       />
-      {error && <span style={{ fontSize: 11, color: 'var(--red)' }}>{error}</span>}
+      {error && (
+        <span style={{ fontSize: 11, color: 'var(--red)' }}>
+          {typeof error === 'string' ? error : 'Something went wrong'}
+        </span>
+      )}
     </div>
   )
 }
