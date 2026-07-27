@@ -17,7 +17,16 @@ export default function LoginPage() {
     try {
       await login(email, password)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed')
+      const detail = err.response?.data?.detail
+      if (Array.isArray(detail)) {
+        // FastAPI/Pydantic validation errors (422) come back as a list of
+        // objects, e.g. [{ msg: "value is not a valid email address", ... }]
+        setError(detail.map(d => d.msg || String(d)).join(', ') || 'Login failed')
+      } else if (typeof detail === 'string') {
+        setError(detail)
+      } else {
+        setError('Login failed')
+      }
     } finally {
       setLoading(false)
     }
