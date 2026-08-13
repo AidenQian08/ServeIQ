@@ -11,7 +11,7 @@ import models
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-in-production")
 ALGORITHM  = "HS256"
-TOKEN_EXPIRE_DAYS = 30
+TOKEN_EXPIRE_MINUTES = 180
 
 pwd_ctx    = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2     = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -26,7 +26,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_token(user_id: str) -> str:
-    expire = datetime.utcnow() + timedelta(days=TOKEN_EXPIRE_DAYS)
+    expire = datetime.utcnow() + timedelta(minutes=TOKEN_EXPIRE_MINUTES)
     return jwt.encode({"sub": user_id, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
 
 
