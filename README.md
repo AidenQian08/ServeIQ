@@ -11,7 +11,7 @@ Tracks serve location, in%, win%, and detects predictability streaks.
 |-----------|-----------------------------------|
 | Backend   | Python · FastAPI · SQLAlchemy     |
 | Database  | SQLite (local) → PostgreSQL (prod)|
-| Auth      | JWT (30-day tokens) + bcrypt      |
+| Auth      | JWT (3-hour tokens) + bcrypt      |
 | Frontend  | React 18 · Vite · React Router    |
 
 ---
@@ -98,7 +98,7 @@ serveiq/
 | Method | Path            | Description       |
 |--------|-----------------|-------------------|
 | POST   | /auth/register  | Create account    |
-| POST   | /auth/login     | Get JWT token     |
+| POST   | /auth/login     | Get JWT      |
 | GET    | /auth/me        | Current user info |
 
 ### Sessions
