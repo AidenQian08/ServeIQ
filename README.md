@@ -131,7 +131,7 @@ Each serve location is treated as a "bandit arm". For every location the AI trac
 - Samples from `Beta(wins+1, losses+1)` for win rate
 - Samples from `Beta(in_made+1, missed+1)` for in rate
 - Multiplies them for effective value (EV)
-- Location that wins the most simulations -> highest EV -> recommendation
+- Location that wins the most simulations → highest EV → recommendation
 
 **Streak / predictability penalty:**
 - Detects consecutive same-location 1st serves for the current side
