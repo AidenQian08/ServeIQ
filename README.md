@@ -1,4 +1,4 @@
-# ServeIQ — Tennis Serve AI
+# ServeIQ: A Tennis Match Tracking and Serve AI Tool
 
 Real-time tennis serve advisor using Thompson Sampling (multi-armed bandit).
 Tracks serve location, in%, win%, and detects predictability streaks.
