@@ -4,11 +4,12 @@ import { useAuth } from '../context/AuthContext'
 import { Logo, Input, Btn } from '../components/UI'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, loginAsGuest } = useAuth()
   const [email, setEmail]     = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]     = useState('')
   const [loading, setLoading] = useState(false)
+  const [guestLoading, setGuestLoading] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -29,6 +30,19 @@ export default function LoginPage() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const continueAsGuest = async () => {
+    setError('')
+    setGuestLoading(true)
+    try {
+      await loginAsGuest()
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Could not start a guest session')
+    } finally {
+      setGuestLoading(false)
     }
   }
 
@@ -66,6 +80,19 @@ export default function LoginPage() {
             {loading ? 'Signing in…' : 'Sign In'}
           </Btn>
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border, #333)' }} />
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>or</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--border, #333)' }} />
+        </div>
+
+        <Btn type="button" onClick={continueAsGuest} disabled={guestLoading} full variant="ghost">
+          {guestLoading ? 'Starting guest session…' : 'Continue as Guest'}
+        </Btn>
+        <p style={{ textAlign: 'center', marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+          Guest sessions are limited to 1 match and deleted when you log out
+        </p>
 
         <p style={{ textAlign: 'center', marginTop: 24, fontSize: 13, color: 'var(--muted)' }}>
           No account?{' '}
