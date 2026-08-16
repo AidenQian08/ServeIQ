@@ -18,6 +18,14 @@ def create_match(
     if body.format not in ("bo3", "bo5"):
         raise HTTPException(400, "format must be 'bo3' or 'bo5'")
 
+    if user.is_guest:
+        existing_count = db.query(models.Match).filter(models.Match.user_id == user.id).count()
+        if existing_count >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail="Guest accounts are limited to one match — sign up to track more.",
+            )
+
     match = models.Match(
         user_id=user.id,
         label=body.label,

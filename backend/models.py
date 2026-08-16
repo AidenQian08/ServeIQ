@@ -52,6 +52,7 @@ class User(Base):
     email      = Column(String, unique=True, index=True, nullable=False)
     name       = Column(String, nullable=False)
     hashed_pw  = Column(String, nullable=False)
+    is_guest   = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     matches = relationship("Match", back_populates="user", cascade="all, delete")
@@ -67,7 +68,7 @@ class Match(Base):
     __tablename__ = "matches"
 
     id           = Column(String, primary_key=True, default=gen_uuid)
-    user_id      = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id      = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     label        = Column(String, nullable=False)          # e.g. "vs. John – Tuesday"
     surface      = Column(String, nullable=True)            # hard / clay / grass / indoor
@@ -110,7 +111,7 @@ class Point(Base):
     __tablename__ = "points"
 
     id         = Column(String, primary_key=True, default=gen_uuid)
-    match_id   = Column(String, ForeignKey("matches.id"), nullable=False)
+    match_id   = Column(String, ForeignKey("matches.id", ondelete="CASCADE"), nullable=False)
     seq        = Column(Integer, nullable=False)     # 1-based order within the match
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
+import secrets
 
 from database import get_db
 import models, schemas
@@ -45,6 +46,7 @@ def register(body: schemas.UserRegister, request: Request, db: Session = Depends
         access_token=create_token(user.id),
         user_id=user.id,
         name=user.name,
+        is_guest=user.is_guest,
     )
 
 
@@ -67,7 +69,47 @@ def login(body: schemas.UserLogin, request: Request, db: Session = Depends(get_d
         access_token=create_token(user.id),
         user_id=user.id,
         name=user.name,
+        is_guest=user.is_guest,
     )
+
+
+@router.post("/guest", response_model=schemas.TokenResponse)
+def create_guest(request: Request, db: Session = Depends(get_db)):
+    # Same generic per-IP flood guard as register — stops someone scripting
+    # this into spamming disposable rows into the database. Guests don't
+    # get the account-lockout check since there's no password to brute-force.
+    check_ip_flood(_client_ip(request))
+    record_attempt(_client_ip(request))
+
+    guest = models.User(
+        # Placeholder email/password — guests never log in with credentials,
+        # they only ever reach their account via the JWT they're issued here.
+        email=f"guest-{secrets.token_hex(8)}@guest.local",
+        name="Guest",
+        hashed_pw=hash_password(secrets.token_urlsafe(32)),
+        is_guest=True,
+    )
+    db.add(guest)
+    db.commit()
+    db.refresh(guest)
+
+    return schemas.TokenResponse(
+        access_token=create_token(guest.id),
+        user_id=guest.id,
+        name=guest.name,
+        is_guest=True,
+    )
+
+
+@router.post("/logout")
+def logout(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+    if user.is_guest:
+        # Cascades through matches -> points, via both the ORM relationship's
+        # cascade="all, delete" and the DB-level ON DELETE CASCADE on the FKs.
+        db.delete(user)
+        db.commit()
+        return {"ok": True, "deleted": True}
+    return {"ok": True, "deleted": False}
 
 
 @router.get("/me", response_model=schemas.UserOut)

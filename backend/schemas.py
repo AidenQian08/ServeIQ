@@ -20,12 +20,14 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     name: str
+    is_guest: bool = False
 
 
 class UserOut(BaseModel):
     id: str
     email: str
     name: str
+    is_guest: bool
     created_at: datetime
 
     class Config:

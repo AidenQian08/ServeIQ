@@ -3,8 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
 import models  # noqa: F401 – ensures models are registered before create_all
 import os
+import asyncio
 
 from routers import auth, matches, points
+from guest_cleanup import run_periodic_sweep
 
 Base.metadata.create_all(bind=engine)
 
@@ -33,6 +35,11 @@ app.add_middleware(
 app.include_router(auth.router,    prefix="/auth",    tags=["auth"])
 app.include_router(matches.router, prefix="/matches", tags=["matches"])
 app.include_router(points.router,  prefix="/points",  tags=["points"])
+
+
+@app.on_event("startup")
+async def start_background_tasks():
+    asyncio.create_task(run_periodic_sweep())
 
 
 @app.get("/health")

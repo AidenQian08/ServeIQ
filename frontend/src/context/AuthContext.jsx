@@ -19,24 +19,39 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const r = await api.post('/auth/login', { email, password })
     localStorage.setItem('token', r.data.access_token)
-    setUser({ id: r.data.user_id, name: r.data.name, email })
+    setUser({ id: r.data.user_id, name: r.data.name, email, is_guest: r.data.is_guest })
     return r.data
   }
 
   const register = async (email, name, password) => {
     const r = await api.post('/auth/register', { email, name, password })
     localStorage.setItem('token', r.data.access_token)
-    setUser({ id: r.data.user_id, name: r.data.name, email })
+    setUser({ id: r.data.user_id, name: r.data.name, email, is_guest: r.data.is_guest })
     return r.data
   }
 
-  const logout = () => {
+  const loginAsGuest = async () => {
+    const r = await api.post('/auth/guest')
+    localStorage.setItem('token', r.data.access_token)
+    setUser({ id: r.data.user_id, name: r.data.name, is_guest: true })
+    return r.data
+  }
+
+  const logout = async () => {
+    // Best-effort — if this fails (e.g. token already expired), still clear
+    // local state so the user isn't stuck. For guest accounts this call is
+    // what actually deletes their match/point data server-side.
+    try {
+      await api.post('/auth/logout')
+    } catch {
+      // ignore — token may already be invalid, nothing more to do server-side
+    }
     localStorage.removeItem('token')
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, loginAsGuest, logout }}>
       {children}
     </AuthContext.Provider>
   )
