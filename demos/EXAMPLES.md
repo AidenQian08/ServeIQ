@@ -3,6 +3,8 @@ Example walkthrough of ServeIQ app.
 
 ## Creating an Account and Logging In
 
+https://github.com/user-attachments/assets/8e59988d-5704-4939-89cf-4636cbc2becb
+
 ### Logging In to the Account
 Navigate to the [ServeIQ Login Page.](https://serve-iq-delta.vercel.app/login)
 
@@ -28,6 +30,8 @@ In the top right corner of the home page, click _+ New Match_
 ![match-creation.png](imgs/match-creation.png)
 
 ## Tracking Points
+
+https://github.com/user-attachments/assets/b3083508-1450-41ad-8bc4-dd172d13c619
 
 ### Logging a Point
 ![match-tracker.png](imgs/match-tracker.png)
