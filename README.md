@@ -3,6 +3,8 @@
 Real-time tennis serve advisor using Thompson Sampling (multi-armed bandit).
 Tracks serve location, in%, win%, and detects predictability streaks.
 
+[Visit the walkthough of the app.](demos/EXAMPLES.md)
+
 ---
 
 ## Stack
