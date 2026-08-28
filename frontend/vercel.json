@@ -1,5 +1,6 @@
 {
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "https://serveiq-backend-g6wa.onrender.com/$1" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
