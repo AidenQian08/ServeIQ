@@ -1,13 +1,15 @@
 """
-Background sweep for abandoned guest accounts.
+Background sweep for expired sessions and the abandoned guest accounts
+they leave behind.
 
 Guest accounts are meant to be deleted the moment the user logs out (see
-POST /auth/logout in routers/auth.py) — but if someone just closes the
-tab without logging out, that deletion never fires. This sweep is the
-safety net: it periodically deletes any guest account older than one
-token lifetime (so it can't still be in active use), cascading through
-its matches/points via the same ORM + DB-level cascade as an explicit
-logout.
+POST /auth/logout in routers/auth.py), which also deletes their one
+session — but if someone just closes the tab without logging out, that
+deletion never fires. This sweep is the safety net: it periodically
+deletes expired session rows, then deletes any guest account left with no
+sessions at all (a guest never logs back in, so once its one session is
+gone it can no longer be reached). Cascades through matches/points via
+the same ORM + DB-level cascade as an explicit logout.
 
 This runs as an in-process background task rather than a separate cron
 job, for simplicity. The tradeoff: it only runs while the app itself is
@@ -19,11 +21,10 @@ real problem at the scale this app is running at.
 """
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from database import SessionLocal
 import models
-from auth_utils import TOKEN_EXPIRE_MINUTES
 
 logger = logging.getLogger("guest_cleanup")
 
@@ -31,22 +32,28 @@ SWEEP_INTERVAL_SECONDS = 30 * 60   # run every 30 minutes
 
 
 def cleanup_expired_guests():
-    """Delete any guest account whose token has already expired. Cascades
-    through matches/points via the same relationship cascade used by the
-    explicit /auth/logout deletion."""
+    """Delete expired session rows, then any guest account left with none."""
     db = SessionLocal()
     try:
-        cutoff = datetime.utcnow() - timedelta(minutes=TOKEN_EXPIRE_MINUTES)
-        stale_guests = (
+        now = datetime.utcnow()
+        expired_sessions = db.query(models.Session).filter(models.Session.expires_at < now).all()
+        for session in expired_sessions:
+            db.delete(session)
+        if expired_sessions:
+            db.commit()
+            logger.info("Swept %d expired session(s)", len(expired_sessions))
+
+        orphaned_guests = (
             db.query(models.User)
-            .filter(models.User.is_guest == True, models.User.created_at < cutoff)  # noqa: E712
+            .filter(models.User.is_guest == True)  # noqa: E712
+            .filter(~models.User.sessions.any())
             .all()
         )
-        for guest in stale_guests:
+        for guest in orphaned_guests:
             db.delete(guest)
-        if stale_guests:
+        if orphaned_guests:
             db.commit()
-            logger.info("Swept %d abandoned guest account(s)", len(stale_guests))
+            logger.info("Swept %d abandoned guest account(s)", len(orphaned_guests))
     finally:
         db.close()
 

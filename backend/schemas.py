@@ -15,9 +15,9 @@ class UserLogin(BaseModel):
     password: str
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class AuthResponse(BaseModel):
+    """Returned by register/login/guest. No token in the body — the session
+    is delivered as an httponly cookie the browser can't read or leak to JS."""
     user_id: str
     name: str
     is_guest: bool = False
@@ -41,7 +41,7 @@ class MatchCreate(BaseModel):
     player1_name: str = "Me"
     player2_name: str = "Opponent"
     format: str = "bo3"                  # "bo3" | "bo5"
-    final_set_tiebreak: bool = True
+    deciding_set: str = "full_set"       # "full_set" | "match_tiebreak_10"
 
 
 class MatchOut(BaseModel):
@@ -51,7 +51,7 @@ class MatchOut(BaseModel):
     player1_name: str
     player2_name: str
     format: str
-    final_set_tiebreak: bool
+    deciding_set: str
     created_at: datetime
     is_active: bool
 
@@ -66,6 +66,7 @@ class MatchOut(BaseModel):
     server: str
     next_side: str
     is_tiebreak: bool
+    tiebreak_target: Optional[int] = None   # 7 or 10 while a tiebreak is in progress
     game_score_display: str
     set_score_display: str
     sets_score_display: str

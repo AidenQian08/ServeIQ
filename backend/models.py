@@ -1,5 +1,6 @@
 import uuid
 import json
+import secrets
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, Enum, Text
 from sqlalchemy.orm import relationship
@@ -12,11 +13,25 @@ def gen_uuid():
     return str(uuid.uuid4())
 
 
+def gen_session_id():
+    # 256 bits of entropy — this is the bearer credential now, so it needs to
+    # be unguessable, not just unique (a uuid4 would do, but this is the
+    # standard token_urlsafe width used elsewhere in this codebase for guest
+    # passwords).
+    return secrets.token_urlsafe(32)
+
+
 # ── Enums ──────────────────────────────────────────────────────────────────
 
 class MatchFormat(str, py_enum.Enum):
     bo3 = "bo3"     # best of 3 sets
     bo5 = "bo5"     # best of 5 sets
+
+
+class DecidingSet(str, py_enum.Enum):
+    """How the deciding set (3rd of a bo3 / 5th of a bo5) is played."""
+    match_tiebreak_10 = "match_tiebreak_10"   # deciding set replaced by a 10-point tiebreak
+    full_set          = "full_set"            # normal set, 7-point tiebreak at 6-6
 
 
 class PlayerEnum(str, py_enum.Enum):
@@ -55,7 +70,25 @@ class User(Base):
     is_guest   = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    matches = relationship("Match", back_populates="user", cascade="all, delete")
+    matches  = relationship("Match", back_populates="user", cascade="all, delete")
+    sessions = relationship("Session", back_populates="user", cascade="all, delete")
+
+
+class Session(Base):
+    """A server-side login session. The value stored in the client's httponly
+    cookie is this row's `id` — an unguessable opaque token, not a JWT — so a
+    session can be revoked immediately just by deleting the row (logout,
+    expiry sweep), unlike a self-contained JWT that stays valid until it
+    expires no matter what the server does."""
+    __tablename__ = "sessions"
+
+    id      = Column(String, primary_key=True, default=gen_session_id)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+
+    user = relationship("User", back_populates="sessions")
 
 
 class Match(Base):
@@ -75,7 +108,7 @@ class Match(Base):
     player1_name = Column(String, nullable=False, default="Me")
     player2_name = Column(String, nullable=False, default="Opponent")
     format       = Column(Enum(MatchFormat), nullable=False, default=MatchFormat.bo3)
-    final_set_tiebreak = Column(Boolean, default=True)      # False = play final set to 2-game lead, no breaker
+    deciding_set = Column(Enum(DecidingSet), nullable=False, default=DecidingSet.full_set)
 
     created_at   = Column(DateTime, default=datetime.utcnow)
     is_active    = Column(Boolean, default=True)

@@ -19,6 +19,11 @@ const FORMATS = [
   { value: 'bo5', label: 'Best of 5' },
 ]
 
+const DECIDING_SETS = [
+  { value: 'match_tiebreak_10', label: 'Tiebreak to 10' },
+  { value: 'full_set', label: 'Full Set' },
+]
+
 export default function DashboardPage() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -158,6 +163,7 @@ function MatchCard({ match, onOpen, onDelete }) {
             {match.is_complete ? 'Complete' : 'In Progress'}
           </Tag>
           <Tag>{match.format === 'bo5' ? 'Best of 5' : 'Best of 3'}</Tag>
+          {match.deciding_set === 'match_tiebreak_10' && <Tag>TB 10</Tag>}
           {match.surface && <Tag>{match.surface}</Tag>}
           <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--green)' }}>Open →</div>
         </div>
@@ -172,6 +178,7 @@ function NewMatchModal({ open, onClose, onCreate }) {
   const [p2, setP2] = useState('Opponent')
   const [surface, setSurface] = useState('Hard')
   const [format, setFormat] = useState('bo3')
+  const [decidingSet, setDecidingSet] = useState('full_set')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -186,9 +193,11 @@ function NewMatchModal({ open, onClose, onCreate }) {
         player1_name: p1.trim(),
         player2_name: p2.trim(),
         format,
+        deciding_set: decidingSet,
       })
       onCreate(r.data)
-      setLabel(''); setP1('Me'); setP2('Opponent'); setSurface('Hard'); setFormat('bo3'); setError('')
+      setLabel(''); setP1('Me'); setP2('Opponent'); setSurface('Hard')
+      setFormat('bo3'); setDecidingSet('full_set'); setError('')
     } catch {
       setError('Failed to create match')
     } finally {
@@ -215,6 +224,17 @@ function NewMatchModal({ open, onClose, onCreate }) {
             Format
           </div>
           <ToggleGroup options={FORMATS} value={format} onChange={setFormat} />
+        </div>
+        <div>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--muted)', marginBottom: 8 }}>
+            Deciding Set
+          </div>
+          <ToggleGroup options={DECIDING_SETS} value={decidingSet} onChange={setDecidingSet} />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
+            {decidingSet === 'match_tiebreak_10'
+              ? `A 10-point tiebreak (win by 2) replaces the ${format === 'bo5' ? 'fifth' : 'third'} set.`
+              : `Full ${format === 'bo5' ? 'fifth' : 'third'} set, with a 7-point tiebreak (win by 2) at 6-6.`}
+          </div>
         </div>
         <div>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--muted)', marginBottom: 8 }}>

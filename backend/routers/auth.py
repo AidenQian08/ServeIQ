@@ -1,23 +1,45 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import os
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 import secrets
 
 from database import get_db
 import models, schemas
-from auth_utils import hash_password, verify_password, create_token, get_current_user
+from auth_utils import (
+    hash_password, verify_password, create_session, delete_session,
+    get_current_user, SESSION_COOKIE_NAME, TOKEN_EXPIRE_MINUTES,
+)
 from rate_limit import check_rate_limit, record_attempt, record_failure, record_success, check_ip_flood
 
 router = APIRouter()
 
 MIN_PASSWORD_LENGTH = 8
 
+# Cookies only get the Secure flag (HTTPS-only) outside local dev, where the
+# frontend/backend both run on plain http://localhost and a Secure cookie
+# would silently never be sent.
+COOKIE_SECURE = os.getenv("ENVIRONMENT", "development") == "production"
+
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-@router.post("/register", response_model=schemas.TokenResponse)
-def register(body: schemas.UserRegister, request: Request, db: Session = Depends(get_db)):
+def _set_session_cookie(response: Response, user_id: str, db: Session):
+    session = create_session(user_id, db)
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        session.id,
+        max_age=TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+    )
+
+
+@router.post("/register", response_model=schemas.AuthResponse)
+def register(body: schemas.UserRegister, response: Response, request: Request, db: Session = Depends(get_db)):
     # Registration doesn't have a "wrong password" concept to brute-force,
     # so it only gets the generic per-IP flood guard (blocks mass account
     # creation / email-enumeration spam), not the per-account lockout.
@@ -42,16 +64,12 @@ def register(body: schemas.UserRegister, request: Request, db: Session = Depends
     db.commit()
     db.refresh(user)
 
-    return schemas.TokenResponse(
-        access_token=create_token(user.id),
-        user_id=user.id,
-        name=user.name,
-        is_guest=user.is_guest,
-    )
+    _set_session_cookie(response, user.id, db)
+    return schemas.AuthResponse(user_id=user.id, name=user.name, is_guest=user.is_guest)
 
 
-@router.post("/login", response_model=schemas.TokenResponse)
-def login(body: schemas.UserLogin, request: Request, db: Session = Depends(get_db)):
+@router.post("/login", response_model=schemas.AuthResponse)
+def login(body: schemas.UserLogin, response: Response, request: Request, db: Session = Depends(get_db)):
     client_ip = _client_ip(request)
 
     # Checked BEFORE the password is verified — an active account lockout
@@ -65,16 +83,12 @@ def login(body: schemas.UserLogin, request: Request, db: Session = Depends(get_d
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     record_success(body.email)
-    return schemas.TokenResponse(
-        access_token=create_token(user.id),
-        user_id=user.id,
-        name=user.name,
-        is_guest=user.is_guest,
-    )
+    _set_session_cookie(response, user.id, db)
+    return schemas.AuthResponse(user_id=user.id, name=user.name, is_guest=user.is_guest)
 
 
-@router.post("/guest", response_model=schemas.TokenResponse)
-def create_guest(request: Request, db: Session = Depends(get_db)):
+@router.post("/guest", response_model=schemas.AuthResponse)
+def create_guest(response: Response, request: Request, db: Session = Depends(get_db)):
     # Same generic per-IP flood guard as register — stops someone scripting
     # this into spamming disposable rows into the database. Guests don't
     # get the account-lockout check since there's no password to brute-force.
@@ -83,7 +97,7 @@ def create_guest(request: Request, db: Session = Depends(get_db)):
 
     guest = models.User(
         # Placeholder email/password — guests never log in with credentials,
-        # they only ever reach their account via the JWT they're issued here.
+        # they only ever reach their account via the session cookie issued here.
         email=f"guest-{secrets.token_hex(8)}@guest.local",
         name="Guest",
         hashed_pw=hash_password(secrets.token_urlsafe(32)),
@@ -93,16 +107,22 @@ def create_guest(request: Request, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(guest)
 
-    return schemas.TokenResponse(
-        access_token=create_token(guest.id),
-        user_id=guest.id,
-        name=guest.name,
-        is_guest=True,
-    )
+    _set_session_cookie(response, guest.id, db)
+    return schemas.AuthResponse(user_id=guest.id, name=guest.name, is_guest=True)
 
 
 @router.post("/logout")
-def logout(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        delete_session(session_id, db)
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+
     if user.is_guest:
         # Cascades through matches -> points, via both the ORM relationship's
         # cascade="all, delete" and the DB-level ON DELETE CASCADE on the FKs.

@@ -216,7 +216,9 @@ export default function MatchPage() {
               {match.label}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-              {match.format === 'bo5' ? 'Best of 5' : 'Best of 3'}{match.surface ? ` · ${match.surface}` : ''}
+              {match.format === 'bo5' ? 'Best of 5' : 'Best of 3'}
+              {match.deciding_set === 'match_tiebreak_10' ? ' · TB to 10' : ''}
+              {match.surface ? ` · ${match.surface}` : ''}
             </div>
           </div>
           <div style={{
@@ -340,7 +342,15 @@ export default function MatchPage() {
 function Scoreboard({ match }) {
   const history = match.sets_history || []
   const cols = history.map((s, i) => ({ label: `S${i + 1}`, p1: s.p1, p2: s.p2, live: false }))
-  if (!match.is_complete) cols.push({ label: `S${history.length + 1}`, p1: match.cur_p1_games, p2: match.cur_p2_games, live: true })
+  // A match tiebreak plays no games, so its column tracks tiebreak points
+  // (matching the 10-8 that lands in sets_history once it's won).
+  const inMatchTiebreak = match.tiebreak_target === 10
+  if (!match.is_complete) cols.push({
+    label: `S${history.length + 1}`,
+    p1: inMatchTiebreak ? match.cur_p1_pts : match.cur_p1_games,
+    p2: inMatchTiebreak ? match.cur_p2_pts : match.cur_p2_games,
+    live: true,
+  })
 
   return (
     <Card accent style={{ padding: 14 }}>
@@ -365,7 +375,11 @@ function Scoreboard({ match }) {
             {match.game_score_display}
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {match.is_tiebreak && <Tag color="var(--yellow)" bg="rgba(255,215,64,0.08)">Tiebreak</Tag>}
+            {match.is_tiebreak && (
+              <Tag color="var(--yellow)" bg="rgba(255,215,64,0.08)">
+                {match.tiebreak_target === 10 ? 'Match Tiebreak · to 10' : 'Tiebreak · to 7'}
+              </Tag>
+            )}
             <Tag color="var(--blue)" bg="rgba(100,181,246,0.08)">{match.next_side === 'deuce' ? 'Deuce Court' : 'Ad Court'}</Tag>
           </div>
         </div>

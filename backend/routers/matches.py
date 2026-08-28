@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
 from auth_utils import get_current_user
-from scoring import game_score_display, TennisEngine
+from scoring import game_score_display, point_target, TennisEngine
 
 router = APIRouter()
 
@@ -17,6 +17,8 @@ def create_match(
 ):
     if body.format not in ("bo3", "bo5"):
         raise HTTPException(400, "format must be 'bo3' or 'bo5'")
+    if body.deciding_set not in ("full_set", "match_tiebreak_10"):
+        raise HTTPException(400, "deciding_set must be 'full_set' or 'match_tiebreak_10'")
 
     if user.is_guest:
         existing_count = db.query(models.Match).filter(models.Match.user_id == user.id).count()
@@ -33,7 +35,7 @@ def create_match(
         player1_name=body.player1_name,
         player2_name=body.player2_name,
         format=body.format,
-        final_set_tiebreak=body.final_set_tiebreak,
+        deciding_set=body.deciding_set,
     )
     db.add(match)
     db.commit()
@@ -97,7 +99,7 @@ def _enrich(m: models.Match) -> schemas.MatchOut:
         player1_name=m.player1_name,
         player2_name=m.player2_name,
         format=m.format,
-        final_set_tiebreak=m.final_set_tiebreak,
+        deciding_set=m.deciding_set,
         created_at=m.created_at,
         is_active=m.is_active,
         p1_sets=m.p1_sets,
@@ -110,6 +112,7 @@ def _enrich(m: models.Match) -> schemas.MatchOut:
         server=live_server,
         next_side=live_side,
         is_tiebreak=m.is_tiebreak,
+        tiebreak_target=point_target(m) if m.is_tiebreak else None,
         game_score_display=game_score_display(m.cur_p1_pts, m.cur_p2_pts, m.is_tiebreak),
         set_score_display=f"{m.cur_p1_games}-{m.cur_p2_games}",
         sets_score_display=f"{m.p1_sets}-{m.p2_sets}",
