@@ -40,34 +40,37 @@ export default function MatchPage() {
   const [s2in, setS2in]     = useState(null)
   const [pointWinner, setPointWinner] = useState(null)
 
-  useEffect(() => { init() }, [matchId])
-
-  const init = async () => {
-    try {
-      const [mRes, pRes, stRes] = await Promise.all([
-        api.get(`/matches/${matchId}`),
-        api.get(`/points/match/${matchId}`),
-        api.get(`/points/match/${matchId}/stats`),
-      ])
-      setMatch(mRes.data)
-      setPoints(pRes.data)
-      setStats(stRes.data)
-    } catch (e) {
-      const status = e?.response?.status
-      const detail = e?.response?.data?.detail
-      console.error('Failed to load match:', status, detail, e)
-      setLoadError(detail || `${status ? `HTTP ${status}` : e.message} — check the console/network tab for details`)
-      showToast('Failed to load match')
-    } finally {
-      setLoadingInit(false)
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const [mRes, pRes, stRes] = await Promise.all([
+          api.get(`/matches/${matchId}`),
+          api.get(`/points/match/${matchId}`),
+          api.get(`/points/match/${matchId}/stats`),
+        ])
+        setMatch(mRes.data)
+        setPoints(pRes.data)
+        setStats(stRes.data)
+      } catch (e) {
+        const status = e?.response?.status
+        const detail = e?.response?.data?.detail
+        console.error('Failed to load match:', status, detail, e)
+        setLoadError(detail || `${status ? `HTTP ${status}` : e.message} — check the console/network tab for details`)
+        showToast('Failed to load match')
+      } finally {
+        setLoadingInit(false)
+      }
     }
-  }
+    init()
+  }, [matchId])
 
   const refreshStats = async () => {
     try {
       const r = await api.get(`/points/match/${matchId}/stats`)
       setStats(r.data)
-    } catch {}
+    } catch (e) {
+      // Silently ignore refresh errors (stats are already displayed)
+    }
   }
 
   // ── point flow ──────────────────────────────────────────────────────────
@@ -179,7 +182,7 @@ export default function MatchPage() {
 
   if (loadError || !match) return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg)', padding: 30, gap: 14, textAlign: 'center' }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--red)' }}>Couldn't load this match</div>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--red)' }}>Couldn&apos;t load this match</div>
       <div style={{ fontSize: 13, color: 'var(--muted)', maxWidth: 320 }}>{loadError || 'Unknown error — check the browser console for details.'}</div>
       <button onClick={() => navigate('/')} style={{
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
@@ -463,7 +466,7 @@ function LocButton({ loc, selected, isRec, isStreak, streakCount, stat, onClick,
 // ── Point-entry flow card ────────────────────────────────────────────────
 
 function FlowCard({
-  step, s1loc, s2loc, serverName, returnerName,
+  step, s1loc, s2loc, serverName,
   pointWinnerName, opponentOfWinnerName, p1Name, p2Name, saving,
   onFirstServeIn, onSelect2Loc, onSecondServeIn, onAceOrPlay, onSelectWinner, onSelectHow,
 }) {
@@ -610,7 +613,7 @@ function AICard({ rec, serverName, side }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
         <AIDot />
         <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--green)', fontWeight: 700 }}>
-          AI · {serverName}'s Serve
+          AI · {serverName}&apos;s Serve
         </span>
         <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
           {side === 'deuce' ? 'Deuce' : 'Ad'}

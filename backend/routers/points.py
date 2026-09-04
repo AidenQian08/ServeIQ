@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models, schemas
 from auth_utils import get_current_user
-from scoring import TennisEngine, other, game_score_display
+from scoring import TennisEngine, other
 from routers.matches import _enrich as enrich_match
 
 router = APIRouter()

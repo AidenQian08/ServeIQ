@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import styles from './UI.module.css'
 
 /* ── Logo ── */
 export function Logo({ size = 'md' }) {
