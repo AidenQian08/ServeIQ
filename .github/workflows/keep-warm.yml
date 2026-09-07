@@ -2,7 +2,9 @@ name: Keep Backend Warm
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Every 15 minutes
+    - cron: '0 * * * *'  # Every hour (more reliable than 15-min)
+  push:
+    branches: [main]  # Also run on push to keep schedule "active"
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
