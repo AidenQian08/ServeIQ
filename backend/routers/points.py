@@ -1,4 +1,5 @@
-import math, random
+import math
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -327,22 +328,23 @@ def _loc_raw(points: list, player: str) -> dict:
     return raw
 
 
+_RNG = np.random.default_rng()
+
+
 def _thompson(raw: dict, n_samples: int = 3000) -> dict:
     """Thompson-sample the blended EV = P(in)*P(win|in) + P(out)*P(win|out→2nd)
     for each location, and return each location's probability of being best."""
-    counts = {l: 0 for l in LOCS}
-    for _ in range(n_samples):
-        best, bv = LOCS[0], float("-inf")   # always default to a valid location
-        for loc in LOCS:
-            r = raw[loc]
-            p_in = _beta_sample(r["first_in_made"] + 1, (r["first_in_att"] - r["first_in_made"]) + 1)
-            p_win_in = _beta_sample(r["first_wins"] + 1, (r["first_win_att"] - r["first_wins"]) + 1)
-            p_win_miss = _beta_sample(r["second_wins"] + 1, (r["second_win_att"] - r["second_wins"]) + 1)
-            ev = p_in * p_win_in + (1 - p_in) * p_win_miss
-            if ev > bv:   # NaN comparisons are always False, so a NaN ev is simply skipped
-                bv, best = ev, loc
-        counts[best] += 1
-    return {l: counts[l] / n_samples for l in LOCS}
+    ev = np.empty((n_samples, len(LOCS)))
+    for i, loc in enumerate(LOCS):
+        r = raw[loc]
+        p_in = _RNG.beta(r["first_in_made"] + 1, (r["first_in_att"] - r["first_in_made"]) + 1, n_samples)
+        p_win_in = _RNG.beta(r["first_wins"] + 1, (r["first_win_att"] - r["first_wins"]) + 1, n_samples)
+        p_win_miss = _RNG.beta(r["second_wins"] + 1, (r["second_win_att"] - r["second_wins"]) + 1, n_samples)
+        ev[:, i] = p_in * p_win_in + (1 - p_in) * p_win_miss
+
+    best = np.argmax(ev, axis=1)   # ties/NaNs resolve to the first (lowest-index) location
+    counts = np.bincount(best, minlength=len(LOCS))
+    return {l: counts[i] / n_samples for i, l in enumerate(LOCS)}
 
 
 def _streak(points: list) -> dict:
@@ -394,31 +396,3 @@ def _pct(num: int, den: int):
     return round(100 * num / den, 1) if den else None
 
 
-def _beta_sample(a: float, b: float) -> float:
-    return _gamma(a) / (_gamma(a) + _gamma(b))
-
-
-def _gamma(shape: float) -> float:
-    if shape < 1:
-        return _gamma(1 + shape) * (random.random() ** (1 / shape))
-    d, c = shape - 1 / 3, 1 / math.sqrt(9 * (shape - 1 / 3))
-    while True:
-        x = _randn()
-        v = 1 + c * x
-        if v <= 0:
-            continue
-        v = v ** 3
-        u = random.random()
-        if u < 1 - 0.0331 * x ** 4:
-            return d * v
-        if math.log(u) < 0.5 * x ** 2 + d * (1 - v + math.log(v)):
-            return d * v
-
-
-def _randn() -> float:
-    u, v = 0.0, 0.0
-    while not u:
-        u = random.random()
-    while not v:
-        v = random.random()
-    return math.sqrt(-2 * math.log(u)) * math.cos(2 * math.pi * v)

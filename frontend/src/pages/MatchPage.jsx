@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import {
   Card, Section, Tag,
-  Spinner, showToast, ToastProvider
+  Spinner, showToast, ToastProvider, Modal
 } from '../components/UI'
 
 const LOCS = ['Wide', 'Body', 'T']
@@ -39,6 +39,7 @@ export default function MatchPage() {
   const [s2loc, setS2loc]   = useState(null)
   const [s2in, setS2in]     = useState(null)
   const [pointWinner, setPointWinner] = useState(null)
+  const [showAiHelp, setShowAiHelp]   = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -224,6 +225,17 @@ export default function MatchPage() {
               {match.surface ? ` · ${match.surface}` : ''}
             </div>
           </div>
+          <button
+            onClick={() => setShowAiHelp(true)}
+            aria-label="How the AI picks a serve location"
+            style={{
+              width: 24, height: 24, borderRadius: '50%',
+              background: 'var(--card)', border: '1px solid var(--border)',
+              color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', padding: 0, flexShrink: 0,
+            }}
+          >?</button>
           <div style={{
             background: 'var(--card)', border: '1px solid var(--border)',
             borderRadius: 20, padding: '4px 12px',
@@ -232,6 +244,34 @@ export default function MatchPage() {
             <strong style={{ color: 'var(--text)' }}>{points.length}</strong> pts
           </div>
         </header>
+
+        <Modal open={showAiHelp} onClose={() => setShowAiHelp(false)} title="How the AI picks a spot">
+          <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+            <p style={{ marginTop: 0, marginBottom: 9 }}>
+              For each location (Wide, Body, T), the AI utilizes Thompson sampling and Beta distributions to
+              predict how often your 1st serve lands in, and how often you win the point from there, with the formula:
+            </p>
+            <p style={{ marginTop: 9, marginBottom: 9 }}>
+              Expected Value = P<sub>First Serve In</sub> ⋅ P<sub>Win off First Serve</sub> + (1 - P<sub>First Serve In</sub>) ⋅ P<sub>Win off Second Serve</sub>
+            </p>
+            <p style={{ marginTop: 9, marginBottom: 9 }}>
+              It then runs 3,000 simulations. In each one, it randomly selects probabilities off
+              of the distribution and returns the win probability of that trial. Locations that
+              historically have done well have a higher likelyhood of doing well in simulation.
+              Each location is checked and for each simulation one location is determined to "win"
+            </p>
+            <p style={{ marginTop: 9, marginBottom: 9 }}>
+              <strong>Win%</strong> is just the share of those 3,000 simulations where that location
+              won, so the three locations always add up to 100%. The location with the highest
+              Win% gets the <strong>AI ★</strong> recommendation, and <strong>Confidence</strong>{' '}
+              reflects how clearly it beat the others.
+            </p>
+            <p  style={{ marginTop: 9, marginBottom: 0 }}>
+              By utilizing this method, the AI can balance suggesting serves that have done well historically
+              while still suggesting serves that have not been hit frequently.
+            </p>
+          </div>
+        </Modal>
 
         {/* Scoreboard */}
         <div style={{ padding: '14px 20px 0' }}>
@@ -453,11 +493,17 @@ function LocButton({ loc, selected, isRec, isStreak, streakCount, stat, onClick,
       <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, letterSpacing: 1, color: 'var(--text)', display: 'block' }}>
         {loc}
       </span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 2 }}>
-        {stat?.first_in_att > 0 ? `In: ${Math.round(stat.first_in_pct)}%` : 'In: —'}
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--muted)', display: 'block', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.3, lineHeight: 1.3 }}>
+        1st Serve %
       </span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', display: 'block', marginTop: 1 }}>
-        {stat?.ev_pct != null ? `EV: ${Math.round(stat.ev_pct)}%` : 'EV: —'}
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text)', display: 'block' }}>
+        {stat?.first_in_att > 0 ? `${Math.round(stat.first_in_pct)}%` : '—'}
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, color: 'var(--muted)', display: 'block', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.3, lineHeight: 1.3 }}>
+        Simulations Won
+      </span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text)', display: 'block' }}>
+        {stat?.ai_prob != null ? `${Math.round(stat.ai_prob * 100)}%` : '—'}
       </span>
     </button>
   )
@@ -605,8 +651,8 @@ function AICard({ rec, serverName, side }) {
   )
 
   const confColor = conf === 'High' ? 'var(--green)' : conf === 'Medium' ? 'var(--yellow)' : 'var(--muted)'
-  const maxEv = Math.max(...locations.map(l => l.ev_pct ?? 0), 0.001)
-  const sorted = [...locations].sort((a, b) => (b.ev_pct ?? 0) - (a.ev_pct ?? 0))
+  const maxProb = Math.max(...locations.map(l => l.ai_prob ?? 0), 0.001)
+  const sorted = [...locations].sort((a, b) => (b.ai_prob ?? 0) - (a.ai_prob ?? 0))
 
   return (
     <Card accent style={{ padding: 14 }}>
@@ -646,14 +692,14 @@ function AICard({ rec, serverName, side }) {
 
       <div style={{ marginBottom: 4 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 34px 34px 36px', gap: 5, marginBottom: 4 }}>
-          {['', '', '1stIn%', '1stWin%', 'EV%'].map((h, i) => (
+          {['', '', '1stIn%', '1stWin%', 'Win%'].map((h, i) => (
             <span key={i} style={{ fontSize: 8, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 1, fontFamily: 'var(--font-mono)', textAlign: i >= 2 ? 'right' : 'left' }}>{h}</span>
           ))}
         </div>
         {sorted.map(ls => {
           const isRec = ls.loc === best
           const isSk = ls.loc === streak?.loc && streak?.count >= 2
-          const bw = ls.ev_pct != null ? Math.round(100 * ls.ev_pct / maxEv) : 0
+          const bw = ls.ai_prob != null ? Math.round(100 * ls.ai_prob / maxProb) : 0
           const barColor = isRec ? 'var(--green)' : isSk ? 'rgba(255,82,82,0.45)' : 'rgba(255,255,255,0.12)'
           return (
             <div key={ls.loc} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 34px 34px 36px', gap: 5, alignItems: 'center', marginBottom: 5 }}>
@@ -670,14 +716,14 @@ function AICard({ rec, serverName, side }) {
                 {ls.first_win_pct != null ? `${Math.round(ls.first_win_pct)}%` : '—'}
               </span>
               <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: isRec ? 'var(--green)' : 'var(--text)', textAlign: 'right' }}>
-                {ls.ev_pct != null ? `${Math.round(ls.ev_pct)}%` : '—'}
+                {ls.ai_prob != null ? `${Math.round(ls.ai_prob * 100)}%` : '—'}
               </span>
             </div>
           )
         })}
       </div>
       <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 4 }}>
-        EV% = 1st-in% × 1st-win% + 1st-miss% × 2nd-serve-win% · expected value of aiming here
+        Win% = share of 3,000 simulated outcomes where aiming here scored the best expected value · adds up to 100%
       </div>
     </Card>
   )
