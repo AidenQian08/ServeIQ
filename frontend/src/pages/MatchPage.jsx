@@ -258,7 +258,7 @@ export default function MatchPage() {
               It then runs 3,000 simulations. In each one, it randomly selects probabilities off
               of the distribution and returns the win probability of that trial. Locations that
               historically have done well have a higher likelyhood of doing well in simulation.
-              Each location is checked and for each simulation one location is determined to "win"
+              Each location is checked and for each simulation one location is determined to &ldquo;win&rdquo;
             </p>
             <p style={{ marginTop: 9, marginBottom: 9 }}>
               <strong>Win%</strong> is just the share of those 3,000 simulations where that location
